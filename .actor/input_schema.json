@@ -63,13 +63,6 @@
           "RESIDENTIAL"
         ]
       }
-    },
-    "dedupe": {
-      "title": "🔄 Deduplicate results",
-      "type": "boolean",
-      "description": "Remove duplicate professional URLs from results (in-memory deduplication).",
-      "editor": "checkbox",
-      "default": true
     }
   },
   "required": [],

@@ -37,7 +37,7 @@ async function main() {
             startUrls,
             url,
             proxyConfiguration,
-            dedupe = true,
+            dedupe = true, // Always enabled internally
         } = input;
 
         const RESULTS_WANTED = Number.isFinite(+RESULTS_WANTED_RAW) ? Math.max(1, +RESULTS_WANTED_RAW) : Number.MAX_SAFE_INTEGER;
@@ -110,6 +110,18 @@ async function main() {
                     const pro = professionalStore[proId];
                     if (!pro) continue;
 
+                    // Build profile URL from slug or ID
+                    let profileUrl = null;
+                    if (pro.profileUrl) {
+                        profileUrl = toAbs(pro.profileUrl);
+                    } else if (pro.slug) {
+                        profileUrl = `https://www.houzz.com/professionals/${pro.slug}`;
+                    } else if (pro.professionalSlug) {
+                        profileUrl = `https://www.houzz.com/professionals/${pro.professionalSlug}`;
+                    } else {
+                        profileUrl = `https://www.houzz.com/pro/${proId}`;
+                    }
+
                     const item = {
                         name: pro.name || null,
                         address: pro.formattedAddress || null,
@@ -123,7 +135,7 @@ async function main() {
                         rating: pro.averageRating || pro.rating || null,
                         review_count: pro.numReviews || pro.reviewCount || null,
                         description: pro.aboutMe || pro.description || null,
-                        profile_url: pro.profileUrl ? toAbs(pro.profileUrl) : null,
+                        profile_url: profileUrl,
                         image_url: pro.imageUrl || pro.logoUrl || null,
                         professional_id: proId,
                     };
@@ -337,19 +349,30 @@ async function main() {
                     const toSave = professionals.slice(0, Math.max(0, remaining));
                     crawlerLog.info(`🔍 Candidates for saving: ${toSave.length}`);
 
+                    // Debug: Log first candidate to see what data we have
+                    if (toSave[0]) {
+                        crawlerLog.info(`🔎 First candidate: ID=${toSave[0].professional_id}, Name=${toSave[0].name}, URL=${toSave[0].profile_url}`);
+                    }
+
                     const filtered = dedupe
                         ? toSave.filter(p => {
-                            const url = p.profile_url || p.name;
-                            if (!url || seenUrls.has(url)) {
-                                crawlerLog.debug(`Skipping duplicate: ${url}`);
+                            // Use professional_id as primary deduplication key (most reliable)
+                            const dedupeKey = p.professional_id || p.profile_url || p.name;
+                            if (!dedupeKey) {
+                                crawlerLog.warning(`⚠️ Professional has no valid dedupe key`);
                                 return false;
                             }
-                            seenUrls.add(url);
+                            if (seenUrls.has(dedupeKey)) {
+                                crawlerLog.debug(`Skipping duplicate ID: ${dedupeKey}`);
+                                return false;
+                            }
+                            seenUrls.add(dedupeKey);
                             return true;
                         })
                         : toSave;
 
                     crawlerLog.info(`✨ After deduplication: ${filtered.length} professionals to save`);
+                    crawlerLog.info(`📝 Total unique IDs tracked: ${seenUrls.size}`);
 
                     if (filtered.length > 0) {
                         try {
