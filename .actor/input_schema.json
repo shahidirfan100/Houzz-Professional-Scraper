@@ -1,0 +1,77 @@
+{
+  "title": "Houzz Professional Scraper",
+  "description": "Extract professional contractor data from Houzz.com. Provide either profession/location OR direct Houzz search URLs. The scraper paginates automatically and extracts comprehensive professional information.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "startUrls": {
+      "title": "🔗 Start URLs (optional)",
+      "type": "array",
+      "description": "Specific Houzz professional search URLs to scrape. If provided, these override profession/location fields.",
+      "editor": "requestListSources",
+      "prefill": [
+        {
+          "url": "https://www.houzz.com/professionals/carpenter/probr0-bo~t_11831"
+        }
+      ]
+    },
+    "profession": {
+      "title": "👷 Profession",
+      "type": "string",
+      "description": "Type of professional to search for (e.g., 'carpenter', 'plumber', 'electrician', 'architect', 'interior-designer').",
+      "editor": "textfield",
+      "prefill": "carpenter"
+    },
+    "location": {
+      "title": "📍 Location",
+      "type": "string",
+      "description": "City or location code (e.g., 'Boston', 'New York', 'probr0-bo'). Leave empty to search all locations.",
+      "editor": "textfield",
+      "prefill": "Boston"
+    },
+    "collectDetails": {
+      "title": "📋 Collect full professional details",
+      "type": "boolean",
+      "description": "If enabled, extracts comprehensive professional information including ratings, reviews, and contact details.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "results_wanted": {
+      "title": "🎯 Maximum number of professionals",
+      "type": "integer",
+      "description": "Maximum number of professionals to collect. Set to a reasonable number to control costs.",
+      "minimum": 1,
+      "default": 50,
+      "editor": "number"
+    },
+    "max_pages": {
+      "title": "📄 Maximum number of pages",
+      "type": "integer",
+      "description": "Safety limit on the number of search result pages to visit (15 professionals per page).",
+      "minimum": 1,
+      "editor": "number",
+      "default": 10
+    },
+    "proxyConfiguration": {
+      "title": "🌐 Proxy configuration",
+      "type": "object",
+      "description": "Use Apify Proxy to avoid blocking. Residential proxies recommended for Houzz.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": [
+          "RESIDENTIAL"
+        ]
+      }
+    },
+    "dedupe": {
+      "title": "🔄 Deduplicate results",
+      "type": "boolean",
+      "description": "Remove duplicate professional URLs from results (in-memory deduplication).",
+      "editor": "checkbox",
+      "default": true
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

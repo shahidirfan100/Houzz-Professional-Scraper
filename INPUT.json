@@ -1,0 +1,7 @@
+{
+  "profession": "carpenter",
+  "location": "Boston",
+  "results_wanted": 20,
+  "max_pages": 2,
+  "collectDetails": true
+}
