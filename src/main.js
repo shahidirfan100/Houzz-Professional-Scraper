@@ -101,6 +101,7 @@ async function main() {
                 if (!stores) return null;
 
                 const professionalStore = stores.ProfessionalStore?.data || {};
+                const userStore = stores.UserStore?.data || {};
                 const viewStore = stores.ViewProfessionalsStore?.data || {};
 
                 const professionals = [];
@@ -110,34 +111,49 @@ async function main() {
                     const pro = professionalStore[proId];
                     if (!pro) continue;
 
+                    // Get corresponding user data (contains name and image)
+                    const userId = pro.userId || proId;
+                    const user = userStore[userId] || {};
+
                     // Build profile URL from slug or ID
                     let profileUrl = null;
-                    if (pro.profileUrl) {
-                        profileUrl = toAbs(pro.profileUrl);
-                    } else if (pro.slug) {
-                        profileUrl = `https://www.houzz.com/professionals/${pro.slug}`;
-                    } else if (pro.professionalSlug) {
-                        profileUrl = `https://www.houzz.com/professionals/${pro.professionalSlug}`;
+                    if (user.houzzLink) {
+                        profileUrl = toAbs(user.houzzLink);
+                    } else if (pro.seoHint?.paths?.ViewProfessional?.titleSlug) {
+                        const slug = pro.seoHint.paths.ViewProfessional.titleSlug;
+                        profileUrl = `https://www.houzz.com/professionals/${slug}`;
                     } else {
-                        profileUrl = `https://www.houzz.com/pro/${proId}`;
+                        profileUrl = `https://www.houzz.com/pro/${userId}`;
+                    }
+
+                    // Build image URL from profileImageId
+                    let imageUrl = null;
+                    if (user.profileImageId) {
+                        imageUrl = `https://st.hzcdn.com/simgs/${user.profileImageId}_0-2801/_.jpg`;
+                    }
+
+                    // Convert rating from integer (49 = 4.9) to decimal
+                    let rating = null;
+                    if (pro.reviewRating !== null && pro.reviewRating !== undefined) {
+                        rating = pro.reviewRating / 10;
                     }
 
                     const item = {
-                        name: pro.name || null,
+                        name: user.displayName || null,
                         address: pro.formattedAddress || null,
                         city: pro.city || null,
-                        state: pro.state || pro.stateCode || null,
+                        state: pro.state || null,
                         zip: pro.zip || null,
                         country: pro.country || null,
-                        phone: pro.phone || null,
+                        phone: pro.formattedPhone || null,
                         latitude: pro.latitude || null,
                         longitude: pro.longitude || null,
-                        rating: pro.averageRating || pro.rating || null,
-                        review_count: pro.numReviews || pro.reviewCount || null,
-                        description: pro.aboutMe || pro.description || null,
+                        rating: rating,
+                        review_count: pro.numReviews || null,
+                        description: pro.aboutMe || null,
                         profile_url: profileUrl,
-                        image_url: pro.imageUrl || pro.logoUrl || null,
-                        professional_id: proId,
+                        image_url: imageUrl,
+                        professional_id: userId,
                     };
 
                     professionals.push(item);
@@ -261,19 +277,19 @@ async function main() {
 
         const crawler = new CheerioCrawler({
             proxyConfiguration: proxyConf,
-            maxRequestRetries: 5,
+            maxRequestRetries: 6,
             useSessionPool: true,
             sessionPoolOptions: {
                 maxPoolSize: 50,
                 sessionOptions: {
-                    maxUsageCount: 10,
-                    maxErrorScore: 3,
+                    maxUsageCount: 5, // More aggressive rotation
+                    maxErrorScore: 2, // Lower tolerance for errors
                 },
             },
-            maxConcurrency: 3,
+            maxConcurrency: 2, // Lower concurrency for stealth
             minConcurrency: 1,
-            requestHandlerTimeoutSecs: 120,
-            navigationTimeoutSecs: 90,
+            requestHandlerTimeoutSecs: 180,
+            navigationTimeoutSecs: 120,
 
             // Pre-navigation hook for stealth headers
             preNavigationHooks: [
@@ -284,14 +300,15 @@ async function main() {
                         browsers: ['chrome'],
                         devices: ['desktop'],
                         locales: ['en-US'],
+                        httpVersion: '2',
                     });
 
                     // Merge with additional stealth headers
                     request.headers = {
                         ...headers,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
                         'Accept-Language': 'en-US,en;q=0.9',
-                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Accept-Encoding': 'gzip, deflate, br, zstd',
                         'Cache-Control': 'max-age=0',
                         'Sec-Fetch-Dest': 'document',
                         'Sec-Fetch-Mode': 'navigate',
@@ -299,10 +316,12 @@ async function main() {
                         'Sec-Fetch-User': '?1',
                         'Upgrade-Insecure-Requests': '1',
                         'Referer': 'https://www.google.com/',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
                     };
 
-                    // Add random delay before request (human-like behavior)
-                    await randomDelay(1000, 3000);
+                    // Add longer random delay before request (human-like behavior)
+                    await randomDelay(3000, 6000);
                 },
             ],
 
@@ -397,8 +416,8 @@ async function main() {
                     if (saved < RESULTS_WANTED && pageNo + 1 < MAX_PAGES && professionals.length >= PROFESSIONALS_PER_PAGE) {
                         const nextUrl = buildPaginationUrl(baseUrl, pageNo + 1);
 
-                        // Add delay before enqueuing next page (natural pacing)
-                        await randomDelay(2000, 4000);
+                        // Add longer delay before enqueuing next page (natural pacing)
+                        await randomDelay(5000, 8000);
 
                         crawlerLog.info(`➡️ Enqueuing next page: ${nextUrl}`);
                         await enqueueLinks({
