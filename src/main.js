@@ -282,11 +282,11 @@ async function main() {
             sessionPoolOptions: {
                 maxPoolSize: 50,
                 sessionOptions: {
-                    maxUsageCount: 5, // More aggressive rotation
+                    maxUsageCount: 8, // Balanced rotation for speed
                     maxErrorScore: 2, // Lower tolerance for errors
                 },
             },
-            maxConcurrency: 2, // Lower concurrency for stealth
+            maxConcurrency: 3, // Balanced concurrency for speed and stealth
             minConcurrency: 1,
             requestHandlerTimeoutSecs: 180,
             navigationTimeoutSecs: 120,
@@ -320,8 +320,8 @@ async function main() {
                         'Connection': 'keep-alive',
                     };
 
-                    // Add longer random delay before request (human-like behavior)
-                    await randomDelay(3000, 6000);
+                    // Add balanced random delay before request (human-like behavior)
+                    await randomDelay(2000, 4000);
                 },
             ],
 
@@ -416,8 +416,8 @@ async function main() {
                     if (saved < RESULTS_WANTED && pageNo + 1 < MAX_PAGES && professionals.length >= PROFESSIONALS_PER_PAGE) {
                         const nextUrl = buildPaginationUrl(baseUrl, pageNo + 1);
 
-                        // Add longer delay before enqueuing next page (natural pacing)
-                        await randomDelay(5000, 8000);
+                        // Add balanced delay before enqueuing next page (natural pacing)
+                        await randomDelay(3000, 5000);
 
                         crawlerLog.info(`➡️ Enqueuing next page: ${nextUrl}`);
                         await enqueueLinks({
