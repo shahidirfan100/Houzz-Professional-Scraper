@@ -1,10 +1,28 @@
-// Houzz Professional Scraper - CheerioCrawler implementation
+// Houzz Professional Scraper - Production-ready with stealth features
 import { Actor, log } from 'apify';
 import { CheerioCrawler, Dataset } from 'crawlee';
 import { load as cheerioLoad } from 'cheerio';
+import { HeaderGenerator } from 'header-generator';
 
 // Single-entrypoint main
 await Actor.init();
+
+// Initialize header generator for realistic browser headers
+const headerGenerator = new HeaderGenerator({
+    browsers: [
+        { name: 'chrome', minVersion: 120, maxVersion: 131 },
+        { name: 'firefox', minVersion: 120, maxVersion: 132 },
+        { name: 'edge', minVersion: 120, maxVersion: 131 },
+    ],
+    devices: ['desktop'],
+    operatingSystems: ['windows', 'macos'],
+    locales: ['en-US', 'en-GB'],
+});
+
+// Random delay helper
+const randomDelay = (min, max) => new Promise(resolve =>
+    setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min)
+);
 
 async function main() {
     try {
@@ -231,10 +249,51 @@ async function main() {
 
         const crawler = new CheerioCrawler({
             proxyConfiguration: proxyConf,
-            maxRequestRetries: 3,
+            maxRequestRetries: 5,
             useSessionPool: true,
-            maxConcurrency: 5,
-            requestHandlerTimeoutSecs: 90,
+            sessionPoolOptions: {
+                maxPoolSize: 50,
+                sessionOptions: {
+                    maxUsageCount: 10,
+                    maxErrorScore: 3,
+                },
+            },
+            maxConcurrency: 3,
+            minConcurrency: 1,
+            requestHandlerTimeoutSecs: 120,
+            navigationTimeoutSecs: 90,
+
+            // Pre-navigation hook for stealth headers
+            preNavigationHooks: [
+                async ({ request }, gotoOptions) => {
+                    // Generate realistic browser headers
+                    const headers = headerGenerator.getHeaders({
+                        operatingSystem: 'windows',
+                        browsers: ['chrome'],
+                        devices: ['desktop'],
+                        locales: ['en-US'],
+                    });
+
+                    // Merge with additional stealth headers
+                    request.headers = {
+                        ...headers,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Cache-Control': 'max-age=0',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Referer': 'https://www.google.com/',
+                    };
+
+                    // Add random delay before request (human-like behavior)
+                    await randomDelay(1000, 3000);
+                },
+            ],
+
             async requestHandler({ request, $, enqueueLinks, log: crawlerLog }) {
                 const label = request.userData?.label || 'LIST';
                 const pageNo = request.userData?.pageNo || 0;
@@ -249,62 +308,112 @@ async function main() {
                     const hzCtxData = extractFromHzCtx($);
                     if (hzCtxData && hzCtxData.professionals.length > 0) {
                         professionals = hzCtxData.professionals;
-                        crawlerLog.info(`Extracted ${professionals.length} professionals from hz-ctx JSON`);
+                        crawlerLog.info(`✅ Extracted ${professionals.length} professionals from hz-ctx JSON`);
                     } else {
                         const jsonLdData = extractFromJsonLd($);
                         if (jsonLdData && jsonLdData.length > 0) {
                             professionals = jsonLdData;
-                            crawlerLog.info(`Extracted ${professionals.length} professionals from JSON-LD`);
+                            crawlerLog.info(`✅ Extracted ${professionals.length} professionals from JSON-LD`);
                         } else {
                             const htmlData = extractFromHtml($, request.url);
                             if (htmlData && htmlData.length > 0) {
                                 professionals = htmlData;
-                                crawlerLog.info(`Extracted ${professionals.length} professionals from HTML`);
+                                crawlerLog.info(`✅ Extracted ${professionals.length} professionals from HTML`);
                             }
                         }
                     }
 
                     if (professionals.length === 0) {
-                        crawlerLog.warning(`No professionals found on page ${pageNo + 1}`);
+                        crawlerLog.warning(`⚠️ No professionals found on page ${pageNo + 1}`);
                         return;
                     }
 
+                    crawlerLog.info(`📊 Processing ${professionals.length} professionals from page ${pageNo + 1}`);
+
                     // Filter and save professionals
                     const remaining = RESULTS_WANTED - saved;
+                    crawlerLog.info(`📈 Remaining to collect: ${remaining} (Saved so far: ${saved}/${RESULTS_WANTED})`);
+
                     const toSave = professionals.slice(0, Math.max(0, remaining));
+                    crawlerLog.info(`🔍 Candidates for saving: ${toSave.length}`);
 
                     const filtered = dedupe
                         ? toSave.filter(p => {
                             const url = p.profile_url || p.name;
-                            if (!url || seenUrls.has(url)) return false;
+                            if (!url || seenUrls.has(url)) {
+                                crawlerLog.debug(`Skipping duplicate: ${url}`);
+                                return false;
+                            }
                             seenUrls.add(url);
                             return true;
                         })
                         : toSave;
 
+                    crawlerLog.info(`✨ After deduplication: ${filtered.length} professionals to save`);
+
                     if (filtered.length > 0) {
-                        await Dataset.pushData(filtered);
-                        saved += filtered.length;
-                        crawlerLog.info(`Saved ${filtered.length} professionals (Total: ${saved}/${RESULTS_WANTED})`);
+                        try {
+                            // Push data to dataset
+                            await Dataset.pushData(filtered);
+                            saved += filtered.length;
+                            crawlerLog.info(`💾 Successfully saved ${filtered.length} professionals to dataset (Total: ${saved}/${RESULTS_WANTED})`);
+
+                            // Log first professional as sample
+                            if (filtered[0]) {
+                                crawlerLog.info(`📋 Sample: ${filtered[0].name} - ${filtered[0].city}, ${filtered[0].state}`);
+                            }
+                        } catch (error) {
+                            crawlerLog.error(`❌ Failed to save data to dataset: ${error.message}`);
+                            throw error;
+                        }
+                    } else {
+                        crawlerLog.warning(`⚠️ No new professionals to save after filtering (all duplicates)`);
                     }
 
                     // Check if we need to paginate
                     if (saved < RESULTS_WANTED && pageNo + 1 < MAX_PAGES && professionals.length >= PROFESSIONALS_PER_PAGE) {
                         const nextUrl = buildPaginationUrl(baseUrl, pageNo + 1);
-                        crawlerLog.info(`Enqueuing next page: ${nextUrl}`);
+
+                        // Add delay before enqueuing next page (natural pacing)
+                        await randomDelay(2000, 4000);
+
+                        crawlerLog.info(`➡️ Enqueuing next page: ${nextUrl}`);
                         await enqueueLinks({
                             urls: [nextUrl],
                             userData: { label: 'LIST', pageNo: pageNo + 1, baseUrl },
                         });
                     } else {
-                        crawlerLog.info(`Pagination stopped. Saved: ${saved}, PageNo: ${pageNo + 1}, MaxPages: ${MAX_PAGES}`);
+                        crawlerLog.info(`🏁 Pagination stopped. Saved: ${saved}, PageNo: ${pageNo + 1}, MaxPages: ${MAX_PAGES}`);
                     }
                 }
+            },
+
+            // Error handler for better debugging
+            failedRequestHandler: async ({ request }, error) => {
+                log.error(`❌ Request failed: ${request.url}`, {
+                    error: error.message,
+                    retryCount: request.retryCount,
+                });
             },
         });
 
         await crawler.run(initial.map(u => ({ url: u, userData: { label: 'LIST', pageNo: 0, baseUrl: u.split('?')[0] } })));
-        log.info(`✅ Finished. Saved ${saved} professionals`);
+
+        // Final summary
+        log.info(`✅ Scraping completed!`);
+        log.info(`📊 Total professionals saved: ${saved}`);
+        log.info(`🔗 Unique URLs tracked: ${seenUrls.size}`);
+
+        // Verify dataset has data
+        const dataset = await Dataset.open();
+        const info = await dataset.getInfo();
+        log.info(`💾 Dataset contains ${info.itemCount} items`);
+
+        if (info.itemCount === 0 && saved > 0) {
+            log.warning(`⚠️ WARNING: Saved counter shows ${saved} but dataset is empty! Data may not have been persisted.`);
+        } else if (info.itemCount > 0) {
+            log.info(`✅ Data successfully saved to dataset!`);
+        }
     } finally {
         await Actor.exit();
     }
